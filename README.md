@@ -2,7 +2,7 @@
 
 ### Setup Environment
 
-Start your environment setup by following this [tutorial](https://github.com/tellesnobrega/kanister-demo/blob/master/setup-environment.md)
+Start your environment setup by following this [tutorial](https://github.com/tellesnobrega/kanister-demo/blob/master/setup-environment)
 
 ### Add some content to WordPress
 
