@@ -1,0 +1,66 @@
+apiVersion: cr.kanister.io/v1alpha1
+kind: Blueprint
+metadata:
+  name: wordpress-blueprint
+  namespace: kanister
+actions:
+  backup:
+    type: Deployment
+    outputArtifacts:
+      backupInfo:
+        keyValue:
+          backupIdentifier: "{{ .Phases.BackupToObjectStore.Output.backupTag }}"
+    phases:
+      - func: BackupData
+        name: BackupToObjectStore
+        args:
+          namespace: "{{ .Deployment.Namespace }}"
+          pod: "{{ index .Deployment.Pods 0 }}"
+          container: kanister-sidecar
+          includePath: /var/www/html
+          backupArtifactPrefix: kubedemo/wordpress-backups
+  restore:
+    type: Deployment
+    phases:
+      - func: ScaleWorkload
+        name: ShutdownApplication
+        args:
+          namespace: "{{ .Deployment.Namespace }}"
+          name: "{{ .Deployment.Name }}"
+          kind: Deployment
+          replicas: 0
+      - func: RestoreData
+        name: RestoreFromObjectStore
+        args:
+          namespace: "{{ .Deployment.Namespace }}"
+          pod: "{{ index .Deployment.Pods 0 }}"
+          image: kanisterio/kanister-tools:0.29.0
+          backupArtifactPrefix: kubedemo/wordpress-backups
+          backupTag: "{{ .ArtifactsIn.backupInfo.KeyValue.backupIdentifier }}"
+      - func: ScaleWorkload
+        name: StartupApplication
+        args:
+          namespace: "{{ .Deployment.Namespace }}"
+          name: "{{ .Deployment.Name }}"
+          kind: Deployment
+          replicas: 1
+  delete:
+    type: Namespace
+    inputArtifactNames:
+      - mysqlCloudDump
+    phases:
+    - func: KubeTask
+      name: deleteFromBlobStore
+      args:
+        namespace: "{{ .Namespace.Name }}"
+        image: kanisterio/kanister-tools:0.29.0
+        command:
+          - bash
+          - -o
+          - errexit
+          - -o
+          - pipefail
+          - -c
+          - |
+            s3_path="{{ .ArtifactsIn.mysqlCloudDump.KeyValue.path }}"
+            kando location delete --profile '{{ toJson .Profile }}' --path ${s3_path}
