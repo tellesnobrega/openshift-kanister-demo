@@ -45,6 +45,22 @@ chmod 700 get_helm.sh
 ./get_helm.sh
 ```
 
+### Install GO
+```
+wget https://dl.google.com/go/go1.14.4.linux-amd64.tar.gz
+tar -C /usr/local -xzf go$VERSION.$OS-$ARCH.tar.gz
+export PATH=$PATH:/usr/local/go/bin
+```
+
+### Install Kanctl
+```
+curl https://raw.githubusercontent.com/kanisterio/kanister/master/scripts/get.sh -o get.sh
+sed -i 's/shasum/sha256sum/g' get.sh
+sed -i 's/sha256sum -a 256/sha256sum/g' get.sh
+chmod +x get.sh
+./get.sh
+```
+
 ### Install Kanister Operator
 ```
 helm repo add kanister https://charts.kanister.io/
