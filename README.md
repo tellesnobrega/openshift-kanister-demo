@@ -15,7 +15,7 @@ Now that the environment is set up you can add a post to WordPress
 This profile is created to manage needed information to connect to databases and S3 object storage.
 ```
 helm install kanister/profile -g --set defaultProfile=true \
-                                 --namespace kanister
+                                 --namespace kanister \
                                  --set location.type='s3Compliant' \
                                  --set location.bucket='kubedemo' \
                                  --set location.endpoint='<URL>:<PORT>' \
