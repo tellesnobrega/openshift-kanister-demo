@@ -1,8 +1,8 @@
-# Running Backup & Restore on a Kubernetes environment using Kanister and Minio
+# Running Backup & Restore on an OpenShift (CRC) environment using Kanister and Minio
 
-The goal of this post is to provide a step-by-step tutorial on how to set up, backup and restore a WordPress application running on Minikube, using Kanister for Backup and Restore and Minio as S3-like Object Storage.
+The goal of this post is to provide a step-by-step tutorial on how to set up, backup and restore a WordPress application running on CodeReady Containers OpenShift, using Kanister for Backup and Restore and Minio as S3-like Object Storage.
 
-This is part of a series of introductions to backup and restore tools I'm playing with. If you are interested also in Velero, check [Velero Blog Post](https://tellesnobrega.github.io/velero-demo/)
+This is part of a series of introductions to backup and restore tools I'm playing with. If you are interested in a similar testing but using velero check the [Velero Blog Post on OpenShift](https://tellesnobrega.github.io/openshift-velero-demo/). Also, If you are interested in this similar tests but using Kubernetes, check [Kanister Blog Post on Kubernetes](https://tellesnobrega.github.io/kanister-demo/), also you can check  the [Velero Blog Post on Kubernetes](https://tellesnobrega.github.io/velero-demo/) and the [Stash Blog Post on Kubernetes](https://tellesnobrega.github.io/stash-demo/).
 
 ## Setting up the Environment
 
@@ -20,27 +20,16 @@ sudo systemctl enable docker
 docker pull minio/minio
 docker run -p 9000:9000 --name minio -e "MINIO_ACCESS_KEY=minio" -e "MINIO_SECRET_KEY=minio123" -v /mnt/data:/data minio/minio server /data
 ```
-### Install Kubectl
+
+### Install CRC
 ```
-cat <<EOF > /etc/yum.repos.d/kubernetes.repo
-[kubernetes]
-name=Kubernetes
-baseurl=https://packages.cloud.google.com/yum/repos/kubernetes-el7-x86_64
-enabled=1
-gpgcheck=1
-repo_gpgcheck=1
-gpgkey=https://packages.cloud.google.com/yum/doc/yum-key.gpg https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
-EOF
-yum install -y kubectl
+sudo dnf install NetworkManager
+crc setup
+crc start
+crc oc-env | head -1
+ - Run the printed command
 ```
 
-### Install minikube
-```
-sudo yum -y install conntrack
-curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-1.9.2-0.x86_64.rpm
-sudo rpm -ivh minikube-1.9.2-0.x86_64.rpm
-minikube start --driver=none
-```
 ### Install Helm
 ```
 yum -y install openssl
@@ -79,14 +68,15 @@ git clone https://github.com/tellesnobrega/kanister-demo.git
 
 ### Deploy wordpress application
 ```
-kubectl create ns wordpress
-kubectl create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
-kubectl create -n wordpress -f kanister-demo/mysql-deployment.yaml
-kubectl create -n wordpress -f kanister-demo/wordpress-deployment.yaml
+oc new-project wordpress
+oc apply -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
+oc apply -n wordpress -f openshift-kanister-demo/mysql-deployment.yaml
+oc apply -n wordpress -f openshift-kanister-demo/wordpress-deployment.yaml
+oc expose service/wordpress
 ```
 #### Check for wordpress url
 ```
-minikube -n wordpress service wordpress --url
+oc get routes
 ```
 
 ### Add some content to WordPress
@@ -112,8 +102,8 @@ helm install kanister/profile -g --set defaultProfile=true \
 
 #### Create the wordpress and mysql blueprint
 ```
-kubectl -n kanister create -f kanister-demo/wordpress-blueprint.yaml
-kubectl -n kanister create -f kanister-demo/mysql-blueprint.yaml
+oc -n kanister apply -f openshift-kanister-demo/wordpress-blueprint.yaml
+oc -n kanister apply -f openshift-kanister-demo/mysql-blueprint.yaml
 ```
 
 #### Run the backup actionset for the mysql container
@@ -168,20 +158,16 @@ Once the wordpress pod is running again, refresh the wordpress and make sure wor
 ##### Scenario 2
 
 ```
-kubectl delete ns wordpress
-kubectl create ns wordpress
-kubectl create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
-kubectl -n wordpress create -f kanister-demo/mysql-deployment.yaml
-kubectl -n wordpress create -f kanister-demo/wordpress-deployment.yaml
+oc delete project wordpress
+oc new-project wordpress
+oc create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
+oc apply -n wordpress -f openshift-kanister-demo/mysql-deployment.yaml
+oc apply -n wordpress -f openshift-kanister-demo/wordpress-deployment.yaml
 ```
 
 ###### Run restore command
 ```
 kanctl create actionset --action restore --namespace kanister --from <MYSQL_BACKUP>
 kanctl create actionset --action restore --namespace kanister --from <WORDPRESS_BACKUP>
-kubectl -n wordpress patch svc wordpress -p '{"spec": { "type": "NodePort", "ports": [ { "nodePort": <PORT>, "port": 80, "protocol": "TCP", "targetPort": 80 } ] } }'
 ```
-Replace <PORT> with the port from previous wordpress deployment. This is needed because wordpress keeps url information
-on the database and after the restore minikube gives the service a new PORT. Patching this solves this redirecting issue.
-
 Refresh WordPress and make sure it is working as expected.
