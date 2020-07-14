@@ -1,8 +1,83 @@
-# kanister-demo on Centos 7
+# Running Backup & Restore on an OpenShift (CRC) environment using Kanister and Minio
 
-### Setup Environment
+The goal of this post is to provide a step-by-step tutorial on how to set up, backup and restore a WordPress application running on CodeReady Containers OpenShift, using Kanister for Backup and Restore and Minio as S3-like Object Storage.
 
-Start your environment setup by following this [tutorial](https://github.com/tellesnobrega/kanister-demo/blob/master/setup-environment.md)
+This is part of a series of introductions to backup and restore tools I'm playing with. If you are interested in a similar testing but using velero check the [Velero Blog Post on OpenShift](https://tellesnobrega.github.io/openshift-velero-demo/). Also, If you are interested in this similar tests but using Kubernetes, check [Kanister Blog Post on Kubernetes](https://tellesnobrega.github.io/kanister-demo/), also you can check  the [Velero Blog Post on Kubernetes](https://tellesnobrega.github.io/velero-demo/) and the [Stash Blog Post on Kubernetes](https://tellesnobrega.github.io/stash-demo/).
+
+## Setting up the Environment
+
+### Install docker
+```
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo yum install -y docker-ce docker-ce-cli containerd.io
+sudo systemctl start docker
+sudo systemctl enable docker
+```
+
+### Running minio container
+```
+docker pull minio/minio
+docker run -p 9000:9000 --name minio -e "MINIO_ACCESS_KEY=minio" -e "MINIO_SECRET_KEY=minio123" -v /mnt/data:/data minio/minio server /data
+```
+
+### Install CRC
+```
+sudo dnf install NetworkManager
+crc setup
+crc start
+crc oc-env | head -1
+ - Run the printed command
+```
+
+### Install Helm
+```
+yum -y install openssl
+curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+chmod 700 get_helm.sh
+./get_helm.sh
+```
+
+### Install GO
+```
+wget https://dl.google.com/go/go1.14.4.linux-amd64.tar.gz
+tar -C /usr/local -xzf go$VERSION.$OS-$ARCH.tar.gz
+export PATH=$PATH:/usr/local/go/bin
+```
+
+### Install Kanctl
+```
+curl https://raw.githubusercontent.com/kanisterio/kanister/master/scripts/get.sh -o get.sh
+sed -i 's/shasum/sha256sum/g' get.sh
+sed -i 's/sha256sum -a 256/sha256sum/g' get.sh
+chmod +x get.sh
+./get.sh
+```
+
+### Install Kanister Operator
+```
+helm repo add kanister https://charts.kanister.io/
+kubectl create ns kanister
+helm install myrelease --namespace kanister kanister/kanister-operator --set image.tag=0.29.0
+```
+
+### Clone this repo
+```
+git clone https://github.com/tellesnobrega/kanister-demo.git
+```
+
+### Deploy wordpress application
+```
+oc new-project wordpress
+oc apply -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
+oc apply -n wordpress -f openshift-kanister-demo/mysql-deployment.yaml
+oc apply -n wordpress -f openshift-kanister-demo/wordpress-deployment.yaml
+oc expose service/wordpress
+```
+#### Check for wordpress url
+```
+oc get routes
+```
 
 ### Add some content to WordPress
 
@@ -27,8 +102,8 @@ helm install kanister/profile -g --set defaultProfile=true \
 
 #### Create the wordpress and mysql blueprint
 ```
-kubectl -n kanister create -f kanister-demo/wordpress-blueprint.yaml
-kubectl -n kanister create -f kanister-demo/mysql-blueprint.yaml
+oc -n kanister apply -f openshift-kanister-demo/wordpress-blueprint.yaml
+oc -n kanister apply -f openshift-kanister-demo/mysql-blueprint.yaml
 ```
 
 #### Run the backup actionset for the mysql container
@@ -39,7 +114,7 @@ kanctl create actionset --action backup \
                         --deployment wordpress/wordpress-mysql \
                         --profile default-profile
 ```
-Annotate the backup name
+Annotate the generated backup name.
 
 #### Run the backup actionset for the wordpress container
 ```
@@ -49,16 +124,16 @@ kanctl create actionset --action backup \
                         --deployment wordpress/wordpress \
                         --profile default-profile
 ```
-Annotate the backup name
+Annotate the generate backup name.
 
 #### Destroy WordPress deployment
 
 With Kanister we can't recover a lost namespace, but we can rebuild an environment with a backup from a destroyed one.
 We will recover two different scenarios:
 
-1 - We will break the database and also wordpress and recover from backup.
+1. We will break the database and also wordpress and recover from backup.
 
-2 - We will delete the wordpress namespace, recreate it and recover from backup.
+2. We will delete the wordpress namespace, recreate it and recover from backup.
 
 ##### Scenario 1
 
@@ -83,20 +158,16 @@ Once the wordpress pod is running again, refresh the wordpress and make sure wor
 ##### Scenario 2
 
 ```
-kubectl delete ns wordpress
-kubectl create ns wordpress
-kubectl create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
-kubectl -n wordpress create -f kanister-demo/mysql-deployment.yaml
-kubectl -n wordpress create -f kanister-demo/wordpress-deployment.yaml
+oc delete project wordpress
+oc new-project wordpress
+oc create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
+oc apply -n wordpress -f openshift-kanister-demo/mysql-deployment.yaml
+oc apply -n wordpress -f openshift-kanister-demo/wordpress-deployment.yaml
 ```
 
 ###### Run restore command
 ```
 kanctl create actionset --action restore --namespace kanister --from <MYSQL_BACKUP>
 kanctl create actionset --action restore --namespace kanister --from <WORDPRESS_BACKUP>
-kubectl -n wordpress patch svc wordpress -p '{"spec": { "type": "NodePort", "ports": [ { "nodePort": <PORT>, "port": 80, "protocol": "TCP", "targetPort": 80 } ] } }'
 ```
-Replace <PORT> with the port from previous wordpress deployment. This is needed because wordpress keeps url information
-on the database and after the restore minikube gives the service a new PORT. Patching this solves this redirecting issue.
-
 Refresh WordPress and make sure it is working as expected.
