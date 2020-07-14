@@ -28,6 +28,7 @@ crc setup
 crc start
 crc oc-env | head -1
  - Run the printed command
+oc login -u kubeadmin -p <password>
 ```
 
 ### Install Helm
@@ -57,19 +58,19 @@ chmod +x get.sh
 ### Install Kanister Operator
 ```
 helm repo add kanister https://charts.kanister.io/
-kubectl create ns kanister
+oc new-project kanister
 helm install myrelease --namespace kanister kanister/kanister-operator --set image.tag=0.29.0
 ```
 
 ### Clone this repo
 ```
-git clone https://github.com/tellesnobrega/kanister-demo.git
+git clone https://github.com/tellesnobrega/openshift-kanister-demo.git
 ```
 
 ### Deploy wordpress application
 ```
 oc new-project wordpress
-oc apply -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
+oc create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
 oc apply -n wordpress -f openshift-kanister-demo/mysql-deployment.yaml
 oc apply -n wordpress -f openshift-kanister-demo/wordpress-deployment.yaml
 oc expose service/wordpress
@@ -163,6 +164,7 @@ oc new-project wordpress
 oc create -n wordpress secret generic mysql-pass --from-literal=password=<MYSQL_ROOT_PASSWORD>
 oc apply -n wordpress -f openshift-kanister-demo/mysql-deployment.yaml
 oc apply -n wordpress -f openshift-kanister-demo/wordpress-deployment.yaml
+oc expose service/wordpress
 ```
 
 ###### Run restore command
